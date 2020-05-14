@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?> 
+<AutoVisualizer xmlns="http://schemas.microsoft.com/vstudio/debugger/natvis/2010">
+  <Type Name="Eco::Private::TaggedPointer_::IncompleteTaggedPointer&lt;*&gt;">
+    <DisplayString>{($T1*)(m_value &amp; PtrMask)}, {($T2)(m_value &amp; TagMask)}</DisplayString>
+    <Expand>
+      <Item Name="[Ptr]">($T1*)(m_value &amp; PtrMask)</Item>
+      <Item Name="[Tag]">($T2)(m_value &amp; TagMask)</Item>
+    </Expand>
+  </Type>
+  <Type Name="Eco::Private::AvlSet_::Hook">
+    <Intrinsic Name="GetBalance" Expression="(int)(children[1].m_value &amp; 1) - (int)(children[0].m_value &amp; 1)"/>
+    <Intrinsic Name="GetLeft" Expression="(Eco::Private::AvlSet_::Hook*)(children[0].m_value &amp; -2)"/>
+    <Intrinsic Name="GetRight" Expression="(Eco::Private::AvlSet_::Hook*)(children[1].m_value &amp; -2)"/>
+    <DisplayString>{(int)!!GetLeft(),d}/{(int)!!GetRight(),d} {GetBalance(),d} {(void*)this}</DisplayString>
+    <Expand>
+      <Item Name="[balance]">GetBalance(),d</Item>
+      <Item Name="[left]" Condition="GetLeft()">*GetLeft()</Item>
+      <Item Name="[right]" Condition="GetRight()">*GetRight()</Item>
+    </Expand>
+  </Type>
+</AutoVisualizer>
