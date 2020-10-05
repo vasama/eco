@@ -2,6 +2,7 @@
 #include <memory>
 
 namespace Eco {
+inline namespace Eco_NS {
 
 class LinearAllocator
 {
@@ -21,4 +22,5 @@ public:
 	}
 };
 
+} // inline namespace Eco_NS
 } // namespace Eco

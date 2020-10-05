@@ -2,15 +2,20 @@
 
 #include "Eco/Private/Config.hpp"
 
-#include <type_traits>
-
 namespace Eco {
 inline namespace Eco_NS {
 
-struct Unit {};
+template<typename T>
+struct SingleLink
+{
+	SingleLink<T>* m_next;
+};
 
 template<typename T>
-using LiftUnit = std::conditional_t<std::is_void_v<T>, Unit, T>;
+struct DoubleLink : SingleLink<T>
+{
+	DoubleLink<T>* m_prev;
+};
 
 } // inline namespace Eco_NS
 } // namespace Eco

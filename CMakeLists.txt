@@ -7,6 +7,28 @@ add_compile_options(-std=c++2a -fno-exceptions -isystem "C:/Program Files/LLVM/i
 add_link_options("-LC:/Program Files/LLVM/lib")
 
 add_library(Eco
-	Private/MpscListQueue.cpp
+	Private/MpscQueue.cpp
+	Private/Mutex.cpp
 )
-target_include_directories(Eco PUBLIC Public)
+
+target_include_directories(Eco
+	PUBLIC
+		Public
+)
+
+if(WIN32)
+	target_sources(Eco
+		PRIVATE
+			Private/Assert.win32.cpp
+	)
+endif()
+
+
+add_executable(Test1
+	Test/Test1.cpp
+)
+
+target_link_libraries(Test1
+	PRIVATE
+		Eco
+)

@@ -1,11 +1,14 @@
 #pragma once
 
+#include "Eco/Assert.hpp"
+#include "Eco/Private/Config.hpp"
+
 #include <type_traits>
 
-#include <assert.h>
-#include <stdint.h>
+#include <cstdint>
 
 namespace Eco {
+inline namespace Eco_NS {
 
 template<typename T>
 	requires(alignof(T) > 1)
@@ -34,7 +37,7 @@ public:
 
 	TaggedPointer(T* ptr, uintptr_t tag)
 	{
-		assert(tag <= TagMask);
+		Eco_Assert(tag <= TagMask);
 		m_ptr = (uintptr_t)ptr | tag;
 	}
 
@@ -58,10 +61,10 @@ public:
 
 	void SetTag(uintptr_t tag)
 	{
-		assert(tag <= TagMask);
+		Eco_Assert(tag <= TagMask);
 		m_ptr = m_ptr | (m_ptr & PtrMask);
 	}
 };
 
+} // inline namespace Eco_NS
 } // namespace Eco
-

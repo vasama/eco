@@ -1,14 +1,15 @@
 #pragma once
 
-#include "Eco/Coro.hpp"
+#include "Eco/Assert.hpp"
+#include "Eco/Coroutine.hpp"
 #include "Eco/Executor.hpp"
+#include "Eco/Private/Config.hpp"
 #include "Eco/Unit.hpp"
 
 #include <atomic>
 
-#include <assert.h>
-
 namespace Eco {
+inline namespace Eco_NS {
 
 template<typename T>
 class Task;
@@ -24,28 +25,24 @@ class TaskContext
 	Executor* m_executor;
 	void* m_buffer = nullptr;
 
-	std::atomic<bool> m_debugIsInUse;
+#if Eco_CONFIG_ASSERT
+	std::atomic<bool> m_isInUse;
+#endif
 
 public:
 	constexpr TaskContext(Executor& executor)
+		: m_executor(&executor)
 	{
-		m_executor = &executor;
 	}
 
+#if Eco_CONFIG_ASSERT
 	~TaskContext()
 	{
-#if Eco_CONFIG_DEBUG
-		{
-			bool isInUse = m_debugIsInUse.load(std::memory_order_relaxed);
-			assert(!isInUse);
-		}
-#endif
+		Eco_Assert(!m_isInUse.load(std::memory_order_relaxed));
 	}
+#endif
 
-	TaskContext(TaskContext&&) = delete;
 	TaskContext(const TaskContext&) = delete;
-	
-	TaskContext& operator=(TaskContext&&) = delete;
 	TaskContext& operator=(const TaskContext&) = delete;
 
 private:
@@ -62,22 +59,25 @@ public:
 	}
 
 	template<typename T>
-	stdcoro::coroutine_handle<> await_suspend(
-		stdcoro::coroutine_handle<TaskPromise<T>> continuation) const
+#ifdef __clang__
+	__attribute__((noinline))
+#endif
+	std20::coroutine_handle<> await_suspend(
+		std20::coroutine_handle<TaskPromise<T>> continuation) const
 	{
 		Coro<TaskPromise<T>> coro(continuation);
 		TaskPromise<T>& promise = continuation.promise();
 
 		if (Executor* executor = promise.m_continuation.executor)
 		{
-			executor->Schedule(promise.m_continuation.object);
+			executor->Schedule(promise.m_continuation.executable);
 		}
 		else if (void* coro = promise.m_continuation.coro)
 		{
-			return stdcoro::coroutine_handle<>::from_address(coro);
+			return std20::coroutine_handle<>::from_address(coro);
 		}
 
-		return stdcoro::noop_coroutine();
+		return std20::noop_coroutine();
 	}
 
 	void await_resume() const
@@ -95,7 +95,7 @@ template<typename T>
 class TaskCrossAwaiter;
 
 template<typename T>
-class TaskPromiseBase : public ExecutorObject
+class TaskPromiseBase : public Executable
 {
 public:
 	typedef LiftUnit<T> ResultType;
@@ -107,7 +107,7 @@ private:
 		Executor* executor;
 		union {
 			void* coro;
-			ExecutorObject* object;
+			Executable* executable;
 		};
 	} m_continuation;
 
@@ -116,8 +116,8 @@ private:
 		alignof(ResultType)
 	> m_result;
 
-#if Eco_CONFIG_DEBUG
-	TaskContext* m_debugContext;
+#if Eco_CONFIG_ASSERT
+	TaskContext* m_context;
 #endif
 
 public:
@@ -125,25 +125,25 @@ public:
 	{
 		if (m_executor == nullptr)
 		{
-			((ResultType*)&m_result)->~ResultType();
+			reinterpret_cast<ResultType&>(m_result).~ResultType();
 		}
 
 		if (m_continuation.executor == nullptr)
 		{
 			if (void* coro = m_continuation.coro)
 			{
-				stdcoro::coroutine_handle<>::from_address(coro).destroy();
+				std20::coroutine_handle<>::from_address(coro).destroy();
 			}
 		}
 
-#if Eco_CONFIG_DEBUG
-		m_debugContext->m_debugIsInUse.store(false, std::memory_order_release);
+#if Eco_CONFIG_ASSERT
+		m_context->m_isInUse.store(false, std::memory_order_release);
 #endif
 	}
 
 	Task<T> get_return_object();
 
-	stdcoro::suspend_always initial_suspend()
+	std20::suspend_always initial_suspend()
 	{
 		return {};
 	}
@@ -168,11 +168,8 @@ public:
 	template<typename... TArgs>
 	void* operator new(size_t size, TaskContext& context, TArgs&&...)
 	{
-#if Eco_CONFIG_DEBUG
-		{
-			bool isInUse = context.m_debugIsInUse.exchange(true, std::memory_order_acquire);
-			assert(!isInUse);
-		}
+#if Eco_CONFIG_ASSERT
+		Eco_Verify(!context.m_isInUse.exchange(true, std::memory_order_acquire));
 #endif
 
 		if (context.m_buffer == nullptr)
@@ -195,13 +192,16 @@ private:
 		m_executor = context.m_executor;
 		m_continuation.executor = nullptr;
 		m_continuation.coro = nullptr;
-		m_debugContext = &context;
+
+#if Eco_CONFIG_ASSERT
+		m_context = &context;
+#endif
 	}
 
 	template<typename TIn>
 	void SetValue(TIn&& value)
 	{
-		assert(m_executor != nullptr);
+		Eco_Assert(m_executor != nullptr);
 		::new (&m_result) ResultType(static_cast<TIn&&>(value));
 		m_executor = nullptr;
 	}
@@ -217,7 +217,7 @@ private:
 };
 
 template<typename T>
-class TaskPromise : public TaskPromiseBase<T>
+class TaskPromise final : public TaskPromiseBase<T>
 {
 public:
 	template<typename... TArgs>
@@ -235,10 +235,15 @@ public:
 	{
 		this->SetValue(value);
 	}
+
+	void Execute() override
+	{
+		std20::coroutine_handle<TaskPromise<T>>::from_promise(*this).resume();
+	}
 };
 
 template<>
-class TaskPromise<void> : public TaskPromiseBase<void>
+class TaskPromise<void> final : public TaskPromiseBase<void>
 {
 public:
 	template<typename... TArgs>
@@ -250,6 +255,11 @@ public:
 	void return_void()
 	{
 		this->SetValue(typename TaskPromiseBase<void>::ResultType{});
+	}
+
+	void Execute() override
+	{
+		std20::coroutine_handle<TaskPromise<void>>::from_promise(*this).resume();
 	}
 };
 
@@ -265,11 +275,6 @@ public:
 	{
 		TaskPromise<T>& promise = *m_coro;
 		m_coro.Release();
-
-		//TODO: executor should also be able to destroy the coroutine?
-		ExecutorObject::Set(promise, [](TaskPromise<T>& promise) {
-			stdcoro::coroutine_handle<TaskPromise<T>>::from_promise(promise).resume();
-		});
 
 		promise.m_executor->Schedule(&promise);
 	}
@@ -295,7 +300,7 @@ public:
 
 private:
 	Task(TaskPromise<T>& promise)
-		: m_coro(stdcoro::coroutine_handle<TaskPromise<T>>::from_promise(promise))
+		: m_coro(std20::coroutine_handle<TaskPromise<T>>::from_promise(promise))
 	{
 	}
 
@@ -314,8 +319,8 @@ public:
 	}
 
 	template<typename TIn>
-	stdcoro::coroutine_handle<> await_suspend(
-		stdcoro::coroutine_handle<TaskPromise<TIn>> continuation)
+	std20::coroutine_handle<> await_suspend(
+		std20::coroutine_handle<TaskPromise<TIn>> continuation)
 	{
 		TaskPromise<TIn>& promise = continuation.promise();
 		Executor* executor = promise.m_executor;
@@ -327,26 +332,22 @@ public:
 		}
 		else
 		{
-			ExecutorObject::Set(promise, [](TaskPromise<T>& promise) {
-				stdcoro::coroutine_handle<TaskPromise<T>>::from_promise(promise).resume();
-			});
-
 			m_coro->m_continuation.executor = executor;
-			m_coro->m_continuation.object = &promise;
+			m_coro->m_continuation.executable = &promise;
 		}
 
-		return stdcoro::noop_coroutine();
+		return std20::noop_coroutine();
 	}
 
 	typename TaskPromise<T>::ResultType await_resume()
 	{
 		typedef typename TaskPromise<T>::ResultType ResultType;
-		return std::move(*((ResultType*)&m_coro->m_result));
+		return reinterpret_cast<ResultType&&>(m_coro->m_Result);
 	}
 
 private:
 	TaskCrossAwaiter(Coro<TaskPromise<T>>&& coro)
-		: m_coro(std::move(coro))
+		: m_coro(static_cast<Coro<TaskPromise<T>>&&>(coro))
 	{
 	}
 
@@ -360,4 +361,5 @@ Task<T> TaskPromiseBase<T>::get_return_object()
 	return Task<T>(static_cast<TaskPromise<T>&>(*this));
 }
 
+} // inline namespace Eco_NS
 } // namespace Eco

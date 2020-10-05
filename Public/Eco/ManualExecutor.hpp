@@ -1,18 +1,18 @@
 #pragma once
 
-#include "Eco/Config.hpp"
 #include "Eco/Executor.hpp"
-
-#include "Eco/MpscListQueue.hpp"
+#include "Eco/MpscQueue.hpp"
+#include "Eco/Private/Config.hpp"
 
 namespace Eco {
+inline namespace Eco_NS {
 
 class ManualExecutor final : public Executor
 {
-	MpscListQueue<ExecutorObject> m_queue;
+	MpscQueue<Executable> m_queue;
 
 public:
-	virtual void Schedule(ExecutorObject* object) override
+	virtual void Schedule(Executable* object) override
 	{
 		m_queue.Enqueue(object);
 	}
@@ -20,13 +20,13 @@ public:
 	size_t Execute()
 	{
 		size_t count = 0;
-		for (ExecutorObject* object; (object = m_queue.TryDequeue()) != nullptr; ++count)
+		for (Executable* executable; (executable = m_queue.TryDequeue()) != nullptr; ++count)
 		{
-			Executor::Execute(object);
+			executable->Execute();
 		}
 		return count;
 	}
 };
 
+} // inline namespace Eco_NS
 } // namespace Eco
-

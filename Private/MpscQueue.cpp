@@ -1,21 +1,20 @@
-#include "Eco/MpscListQueue.hpp"
+#include "Eco/MpscQueue.hpp"
 
 using namespace Eco;
 
-void Eco::MpscListQueue<void>::Enqueue(ForwardListObject<void>* object)
+void Eco::Eco_NS::_::MpscQueue::Enqueue(SingleLink<void>* object)
 {
-	assert(object->m_next == nullptr);
-
-	ForwardListObject<void>* head = m_enqueue.load(std::memory_order_acquire);
-	do {
+	SingleLink<void>* head = m_enqueue.load(std::memory_order_acquire);
+	do
+	{
 		object->m_next = head;
 	} while (!m_enqueue.compare_exchange_weak(head, object,
 		std::memory_order_release, std::memory_order_acquire));
 }
 
-ForwardListObject<void>* Eco::MpscListQueue<void>::TryDequeue()
+SingleLink<void>* Eco::Eco_NS::_::MpscQueue::TryDequeue()
 {
-	ForwardListObject<void>* object = m_dequeue;
+	SingleLink<void>* object = m_dequeue;
 
 	if (object != nullptr)
 	{
@@ -30,10 +29,10 @@ ForwardListObject<void>* Eco::MpscListQueue<void>::TryDequeue()
 	}
 
 	object = m_enqueue.exchange(nullptr, std::memory_order_acq_rel);
-	if (ForwardListObject<void>* next = object->m_next)
+	if (SingleLink<void>* next = object->m_next)
 	{
 		object->m_next = nullptr;
-		while (ForwardListObject<void>* next2 = next->m_next)
+		while (SingleLink<void>* next2 = next->m_next)
 		{
 			next->m_next = object;
 			object = next;
